@@ -44,19 +44,61 @@ const assert = require('node:assert')
 const cluster = require('node:cluster')
 const path = require('node:path')
 
-const { BskyAppView, ServerConfig } = require('@atproto/bsky')
+const bsky = require('@atproto/bsky')
 const { Secp256k1Keypair } = require('@atproto/crypto')
 
 const main = async () => {
   const env = getEnv()
-  const config = ServerConfig.readEnv()
+  const config = bsky.ServerConfig.readEnv()
   assert(env.serviceSigningKey, 'must set BSKY_SERVICE_SIGNING_KEY')
   const signingKey = await Secp256k1Keypair.import(env.serviceSigningKey)
-  const bsky = BskyAppView.create({ config, signingKey })
-  await bsky.start()
+  // starts: involve logics in packages/dev-env/src/bsky.ts >>>>>>>>>>>>>
+  // Separate migration db in case migration changes some connection state that we need in the tests, e.g. "alter database ... set ..."
+  const migrationDb = new bsky.Database({
+    url: env.dbPostgresUrl,
+    schema: env.dbPostgresSchema,
+  })
+  if (env.migration) {
+    await migrationDb.migrateToOrThrow(env.migration)
+  } else {
+    await migrationDb.migrateToLatestOrThrow()
+  }
+  await migrationDb.close()
+
+  const db = new bsky.Database({
+    url: env.dbPostgresUrl,
+    schema: env.dbPostgresSchema,
+    poolSize: 10,
+  })
+
+  const dataplane = await bsky.DataPlaneServer.create(
+    db,
+    env.dataplanePort,
+    config.didPlcUrl,
+  )
+
+  const bsync = await bsky.MockBsync.create(db, env.bsyncPort)
+
+  // ends: involve logics in packages/dev-env/src/bsky.ts   <<<<<<<<<<<<<
+
+  const server = bsky.BskyAppView.create({ config, signingKey })
+  // starts: involve logics in packages/dev-env/src/bsky.ts >>>>>>>>>>>>>
+  const sub = new bsky.RepoSubscription({
+    service: env.repoProvider,
+    db,
+    idResolver: dataplane.idResolver,
+    background: new bsky.BackgroundQueue(db),
+  })
+  // ends: involve logics in packages/dev-env/src/bsky.ts   <<<<<<<<<<<<<
+  await server.start()
+  sub.start() // involve logics in packages/dev-env/src/bsky.ts
   // Graceful shutdown (see also https://aws.amazon.com/blogs/containers/graceful-shutdowns-with-ecs/)
   const shutdown = async () => {
-    await bsky.destroy()
+    await server.destroy()
+    await bsync.destroy()
+    await dataplane.destroy()
+    await sub.destroy()
+    await db.close()
   }
   process.on('SIGTERM', shutdown)
   process.on('disconnect', shutdown) // when clustering
@@ -64,6 +106,12 @@ const main = async () => {
 
 const getEnv = () => ({
   serviceSigningKey: process.env.BSKY_SERVICE_SIGNING_KEY || undefined,
+  dbPostgresUrl: process.env.BSKY_DB_POSTGRES_URL || undefined,
+  dbPostgresSchema: process.env.BSKY_DB_POSTGRES_SCHEMA || undefined,
+  dataplanePort: maybeParseInt(process.env.BSKY_DATAPLANE_PORT) || undefined,
+  bsyncPort: maybeParseInt(process.env.BSKY_BSYNC_PORT) || undefined,
+  migration: process.env.ENABLE_MIGRATIONS === 'true' || undefined,
+  repoProvider: process.env.BSKY_REPO_PROVIDER || undefined,
 })
 
 const maybeParseInt = (str) => {
