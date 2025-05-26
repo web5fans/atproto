@@ -244,7 +244,7 @@ export function isLocalHostname(hostname: string): boolean {
 }
 
 function isNotUnicast(ip: ipaddr.IPv4 | ipaddr.IPv6): boolean {
-  return ip.range() !== 'unicast'
+  return ip.range() !== 'unicast' && ip.range() !== 'private'
 }
 
 function parseLookupAddress({
