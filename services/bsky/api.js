@@ -68,7 +68,7 @@ const main = async () => {
   const db = new bsky.Database({
     url: env.dbPostgresUrl,
     schema: env.dbPostgresSchema,
-    poolSize: 10,
+    poolSize: 20,
   })
 
   const dataplane = await bsky.DataPlaneServer.create(
