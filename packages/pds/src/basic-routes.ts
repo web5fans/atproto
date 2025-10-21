@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { sql } from 'kysely'
+import { envStr } from '@atproto/common'
 import { AppContext } from './context'
 
 export const createRouter = (ctx: AppContext): Router => {
@@ -46,6 +47,12 @@ Most API routes are under /xrpc/
       return
     }
     res.send({ version })
+  })
+
+  router.get('/handle-redirect', async function (req, res) {
+    const host = req.get('host')
+    const UserProfileURL = envStr('USER_PROFILE_URL')
+    res.redirect(307, `${UserProfileURL}/${host}`)
   })
 
   return router
