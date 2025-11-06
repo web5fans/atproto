@@ -7,8 +7,10 @@ export const createRouter = (ctx: AppContext): Router => {
   const router = Router()
 
   router.get('/', function (req, res) {
-    res.type('text/plain')
-    res.send(`
+    const host = req.get('host')
+    if (host === envStr('PDS_HOSTNAME')) {
+      res.type('text/plain')
+      res.send(`
          __                         __
         /\\ \\__                     /\\ \\__
     __  \\ \\ ,_\\  _____   _ __   ___\\ \\ ,_\\   ___
@@ -28,6 +30,10 @@ Most API routes are under /xrpc/
  Self-Host: https://github.com/bluesky-social/pds
   Protocol: https://atproto.com
 `)
+    } else {
+      const UserProfileURL = envStr('USER_PROFILE_URL')
+      res.redirect(307, `${UserProfileURL}/${host}`)
+    }
   })
 
   router.get('/robots.txt', function (req, res) {
@@ -47,12 +53,6 @@ Most API routes are under /xrpc/
       return
     }
     res.send({ version })
-  })
-
-  router.get('/handle-redirect', async function (req, res) {
-    const host = req.get('host')
-    const UserProfileURL = envStr('USER_PROFILE_URL')
-    res.redirect(307, `${UserProfileURL}/${host}`)
   })
 
   return router
