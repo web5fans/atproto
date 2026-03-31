@@ -12,7 +12,7 @@ env:
   REGISTRY: ghcr.io
   USERNAME: ${{ github.actor }}
   PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-  IMAGE_NAME: bsky
+  IMAGE_NAME: ${{ github.repository_owner }}/bsky
 
 jobs:
   bsky-container-ghcr:
